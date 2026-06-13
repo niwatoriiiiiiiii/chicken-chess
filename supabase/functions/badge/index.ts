@@ -40,7 +40,9 @@ Deno.serve(async (req: Request) => {
   const { data, error } = await sb
     .from('game_results')
     .select('accuracy, outcome')
-    .eq('github_username', username);
+    .eq('github_username', username)
+    .order('played_at', { ascending: false })
+    .limit(30);
 
   // ゲーム未プレイ or エラー
   if (error || !data || data.length === 0) {
