@@ -1,0 +1,16 @@
+# Supabase
+.temp/
+supabase/.branches/
+supabase/.temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# 環境変数（万が一作った場合）
+.env
+.env.local

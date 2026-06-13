@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐔 Chicken Chess</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg:   #111;
+  --surf: #1c1c1c;
+  --bl:   #e0e0e0;
+  --bd:   #8a8a8a;
+  --bord: #333;
+  --acc:  #5b9bd5;
+  --text: #e8e8e8;
+  --mute: #666;
+  --red:  #d04040;
+  --sz:   clamp(46px, calc((100vw - 44px) / 6), 84px);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;min-height:100svh;display:flex;flex-direction:column;align-items:center;}
+
+header{width:100%;max-width:560px;padding:18px 16px 8px;display:flex;justify-content:space-between;align-items:center;}
+.logo{font-size:16px;font-weight:600;}
+
+/* Auth UI */
+.auth-area{display:flex;align-items:center;gap:8px;}
+.login-btn{font-size:12px;color:var(--acc);background:none;border:1px solid var(--acc);border-radius:4px;padding:4px 10px;cursor:pointer;}
+.login-btn:hover{background:rgba(91,155,213,.1);}
+.user-info{display:none;align-items:center;gap:6px;}
+.gh-avatar{width:20px;height:20px;border-radius:50%;}
+.gh-name{font-size:12px;color:var(--text);}
+.logout-btn{font-size:11px;color:var(--mute);background:none;border:none;cursor:pointer;padding:0 2px;}
+.logout-btn:hover{color:var(--text);}
+
+main{width:100%;max-width:560px;padding:0 16px 40px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+
+.prow{width:calc(var(--sz)*6);display:flex;align-items:center;gap:8px;height:22px;}
+.pname{font-size:13px;color:var(--mute);}
+.pname.on{color:var(--text);font-weight:500;}
+.ptag{margin-left:auto;font-size:10px;font-weight:600;letter-spacing:.4px;color:var(--acc);text-transform:uppercase;opacity:0;transition:opacity .15s;}
+.ptag.on{opacity:1;}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+.ptag.pulse{animation:pulse .9s infinite;}
+
+.srow{width:calc(var(--sz)*6);display:flex;justify-content:space-between;align-items:center;height:18px;}
+#stxt{font-size:13px;color:var(--mute);}
+#stxt.on{color:var(--text);}
+#stxt.pulse{color:var(--mute);animation:pulse .9s infinite;}
+#mnm{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums;}
+
+.bwrap{border:1px solid var(--bord);border-radius:2px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.6);}
+#board{display:grid;grid-template:repeat(6,var(--sz))/repeat(6,var(--sz));user-select:none;}
+.cell{width:var(--sz);height:var(--sz);display:flex;align-items:center;justify-content:center;position:relative;cursor:default;}
+.cell.L{background:var(--bl);}
+.cell.D{background:var(--bd);}
+.cell.selected{background:var(--acc)!important;opacity:.85;}
+.cell.last-from{background:rgba(91,155,213,.15)!important;}
+.cell.last-to{background:rgba(91,155,213,.30)!important;}
+.cell.vm::after{content:'';position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.22);pointer-events:none;}
+.cell.vc::after{content:'';position:absolute;inset:8%;border-radius:50%;border:3px solid rgba(0,0,0,.25);pointer-events:none;}
+.cell.clickable{cursor:pointer;}
+
+.piece{width:80%;height:80%;cursor:grab;position:relative;z-index:1;transition:transform .08s,opacity .08s;image-rendering:pixelated;}
+.piece:hover{transform:scale(1.06);}
+.piece.dragging{opacity:.3;transform:scale(.95);cursor:grabbing;}
+
+#drag-ghost{position:fixed;pointer-events:none;z-index:999;transform:translate(-50%,-50%);image-rendering:pixelated;opacity:.9;display:none;}
+
+/* Result panel */
+#result{display:none;width:calc(var(--sz)*6);background:var(--surf);border:1px solid var(--bord);border-radius:6px;padding:22px 18px;text-align:center;margin-top:2px;}
+#result.show{display:block;}
+.res-title{font-size:19px;font-weight:600;margin-bottom:14px;}
+.res-title.win{color:var(--acc);}
+.res-title.lose{color:var(--red);}
+.res-title.draw{color:var(--mute);}
+.res-stats{display:flex;justify-content:center;gap:36px;margin-bottom:16px;}
+.stat{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.stat-val{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;}
+.stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--mute);}
+
+.res-actions{display:flex;flex-direction:column;gap:10px;align-items:center;}
+.share-btn{padding:9px 24px;background:var(--acc);color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:600;cursor:pointer;}
+.share-btn:hover{opacity:.85;}
+
+/* Badge section */
+#badge-section{display:none;width:100%;text-align:left;}
+.badge-label{font-size:11px;color:var(--mute);margin-bottom:6px;}
+.badge-code{
+  font-size:10px;color:var(--text);background:#0a0a0a;
+  border:1px solid var(--bord);border-radius:4px;
+  padding:8px 10px;word-break:break-all;line-height:1.5;
+  cursor:pointer;transition:border-color .15s;
+}
+.badge-code:hover{border-color:var(--acc);}
+.badge-hint{font-size:10px;color:var(--mute);margin-top:4px;}
+
+/* Login prompt in result */
+#login-prompt{display:none;font-size:12px;color:var(--mute);}
+#login-prompt a{color:var(--acc);cursor:pointer;text-decoration:none;}
+#login-prompt a:hover{text-decoration:underline;}
+
+.hint{font-size:11px;color:var(--mute);text-align:center;line-height:1.7;padding-top:2px;}
+</style>
+</head>
+<body>
+
+<img id="drag-ghost" width="64" height="64" alt="">
+
+<header>
+  <span class="logo">🐔 Chicken Chess</span>
+  <div class="auth-area">
+    <button class="login-btn" id="login-btn" onclick="loginWithGitHub()">Login with GitHub</button>
+    <div class="user-info" id="user-info">
+      <img class="gh-avatar" id="gh-avatar" src="" alt="">
+      <span class="gh-name" id="gh-name"></span>
+      <button class="logout-btn" onclick="logout()">✕</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="prow">
+    <span style="font-size:18px;line-height:1">🔴</span>
+    <span class="pname" id="black-name">CPU</span>
+  </div>
+  <div class="srow">
+    <span id="stxt">Your turn</span>
+    <span id="mnm">Move 1</span>
+  </div>
+  <div class="bwrap"><div id="board"></div></div>
+  <div class="prow">
+    <span style="font-size:18px;line-height:1">🔵</span>
+    <span class="pname on" id="white-name">You</span>
+    <span class="ptag" id="white-tag">your turn</span>
+  </div>
+
+  <div id="result">
+    <div class="res-title" id="res-title"></div>
+    <div class="res-stats">
+      <div class="stat"><span class="stat-val" id="stat-acc">—</span><span class="stat-lbl">Accuracy</span></div>
+      <div class="stat"><span class="stat-val" id="stat-mov">—</span><span class="stat-lbl">Moves</span></div>
+    </div>
+    <div class="res-actions">
+      <button class="share-btn" onclick="doShare()">Share result</button>
+      <!-- ログイン済み: バッジURL表示 -->
+      <div id="badge-section">
+        <div class="badge-label">Your badge (click to copy)</div>
+        <div class="badge-code" id="badge-code" onclick="copyBadge()"></div>
+        <div class="badge-hint">Paste in your GitHub profile README</div>
+      </div>
+      <!-- 未ログイン: ログイン促進 -->
+      <div id="login-prompt">
+        <a onclick="loginWithGitHub()">Login with GitHub</a> to save stats &amp; get your badge
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">Drag or click a piece · Blue squares show valid moves</div>
+</main>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════
+//  Supabase
+// ══════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://kfhxqcuotcuilxpfykqe.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaHhxY3VvdGN1aWx4cGZ5a3FlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMjUwMjIsImV4cCI6MjA5NjkwMTAyMn0.isl6PboYNINK9wg78HREHgRpuazqRxeeXDjSgPm78mM';
+// ══════════════════════════════════════════════════════════════
+
+// ── Images ─────────────────────────────────────────────────────
+const IMGS = {
+  1: '/assets/chicken_knife_blue.png',
+  2: '/assets/chicken_knife_red.png',
+};
+
+// ── Supabase client ────────────────────────────────────────────
+const { createClient } = window.supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+async function initAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) setUser(session.user);
+
+  sb.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user ?? null);
+  });
+}
+
+function setUser(user) {
+  currentUser = user;
+  const loginBtn  = document.getElementById('login-btn');
+  const userInfo  = document.getElementById('user-info');
+  if (user) {
+    loginBtn.style.display = 'none';
+    userInfo.style.display = 'flex';
+    document.getElementById('gh-name').textContent   = user.user_metadata?.user_name ?? '';
+    document.getElementById('gh-avatar').src          = user.user_metadata?.avatar_url ?? '';
+  } else {
+    loginBtn.style.display = 'block';
+    userInfo.style.display = 'none';
+  }
+}
+
+async function loginWithGitHub() {
+  await sb.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: window.location.href },
+  });
+}
+
+async function logout() {
+  await sb.auth.signOut();
+}
+
+async function saveResult(outcome, acc, moves) {
+  if (!currentUser) return;
+  const today    = new Date().toISOString().split('T')[0];
+  const username = currentUser.user_metadata?.user_name;
+  await sb.from('game_results').insert({
+    user_id:         currentUser.id,
+    github_username: username,
+    puzzle_date:     today,
+    outcome, accuracy: acc, moves,
+  });
+  // 重複エラー（同日2回目以降）は無視
+}
+
+// ── Seeded RNG ─────────────────────────────────────────────────
+const mkRng = seed => {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ s>>>15, 1|s);
+    t = (t + Math.imul(t^t>>>7, 61|t)) ^ t;
+    return ((t^t>>>14)>>>0) / 4294967296;
+  };
+};
+const TODAY  = new Date();
+const SEED   = TODAY.getFullYear()*10000 + (TODAY.getMonth()+1)*100 + TODAY.getDate();
+const random = mkRng(SEED);
+
+// ── Game constants ──────────────────────────────────────────────
+const BS=6, E=0, W=1, B=2, WIN=100000;
+const CPU_D=3, ACC_D=3;
+const DIRS = {
+  [W]:[[-1,-1],[-1,0],[-1,1],[1,0]],
+  [B]:[[1,-1],[1,0],[1,1],[-1,0]]
+};
+
+// ── Board utils ────────────────────────────────────────────────
+const freshBoard = () => {
+  const b = Array(36).fill(E);
+  for(let c=0;c<BS;c++){ b[c]=B; b[30+c]=W; }
+  return b;
+};
+const at  = (b,r,c) => b[r*BS+c];
+const opp = p => p===W ? B : W;
+const legalMoves = (b,p) => {
+  const out=[];
+  for(let r=0;r<BS;r++) for(let c=0;c<BS;c++) {
+    if(at(b,r,c)!==p) continue;
+    for(const[dr,dc]of DIRS[p]) {
+      const nr=r+dr, nc=c+dc;
+      if(nr>=0&&nr<BS&&nc>=0&&nc<BS&&at(b,nr,nc)!==p)
+        out.push([r,c,nr,nc]);
+    }
+  }
+  return out;
+};
+const applyMove = (b,[r,c,nr,nc]) => {
+  const nb=b.slice(); nb[nr*BS+nc]=nb[r*BS+c]; nb[r*BS+c]=E; return nb;
+};
+const pieceCount = (b,p) => b.reduce((n,x)=>n+(x===p),0);
+const terminal = (b,tm) => {
+  for(let c=0;c<BS;c++) {
+    if(at(b,0,c)===W)    return W;
+    if(at(b,BS-1,c)===B) return B;
+  }
+  if(!pieceCount(b,W)) return B;
+  if(!pieceCount(b,B)) return W;
+  if(!legalMoves(b,tm).length) return opp(tm);
+  return 0;
+};
+const evaluate = b => {
+  let s=0;
+  for(let r=0;r<BS;r++) for(let c=0;c<BS;c++) {
+    const p=at(b,r,c);
+    if(p===W) s+=100+(BS-1-r)*12;
+    else if(p===B) s-=100+r*12;
+  }
+  return s;
+};
+
+// ── Minimax ────────────────────────────────────────────────────
+function minimax(b,p,d,a=-Infinity,be=Infinity,pl=0) {
+  const t=terminal(b,p);
+  if(t) return[(WIN-pl)*(t===W?1:-1),null];
+  if(!d) return[evaluate(b),null];
+  const ms=legalMoves(b,p), nx=opp(p);
+  let bm=ms[0], best=p===W?-Infinity:Infinity;
+  for(const m of ms) {
+    const[s]=minimax(applyMove(b,m),nx,d-1,a,be,pl+1);
+    if(p===W?s>best:s<best){best=s;bm=m;}
+    if(p===W)a=Math.max(a,best); else be=Math.min(be,best);
+    if(be<=a) break;
+  }
+  return[best,bm];
+}
+
+// ── CPU move ───────────────────────────────────────────────────
+const cpuPick = b => {
+  const ms=legalMoves(b,B); if(!ms.length) return null;
+  for(let i=ms.length-1;i>0;i--) {
+    const j=Math.floor(random()*(i+1)); [ms[i],ms[j]]=[ms[j],ms[i]];
+  }
+  let best=Infinity, bm=ms[0];
+  for(const m of ms) {
+    const nb=applyMove(b,m), t=terminal(nb,W);
+    const s=t?(WIN-1)*(t===W?1:-1):minimax(nb,W,CPU_D-1,-Infinity,Infinity,1)[0];
+    if(s<best){best=s;bm=m;}
+  }
+  return bm;
+};
+
+// ── Accuracy ───────────────────────────────────────────────────
+let accHits=0, accTotal=0;
+const trackAcc = (b,m) => {
+  const ms=legalMoves(b,W); if(!ms.length) return;
+  const scores=ms.map(mv=>{
+    const nb=applyMove(b,mv), t=terminal(nb,B);
+    return t?(WIN-1)*(t===W?1:-1):minimax(nb,B,ACC_D-1,-Infinity,Infinity,1)[0];
+  });
+  const best=Math.max(...scores);
+  const ui=ms.findIndex(([r,c,nr,nc])=>r===m[0]&&c===m[1]&&nr===m[2]&&nc===m[3]);
+  if(ui>=0&&scores[ui]>=best) accHits++;
+  accTotal++;
+};
+
+// ── Position history ───────────────────────────────────────────
+const posHist={};
+const recPos=(b,tm)=>{
+  const k=b.join(',')+tm; posHist[k]=(posHist[k]||0)+1; return posHist[k];
+};
+
+// ── Game state ─────────────────────────────────────────────────
+let board=freshBoard(), toMove=W;
+let selected=null, vmoves=[], lastMove=null;
+let gameOver=false, moveNumber=0;
+
+// ── Drag state ─────────────────────────────────────────────────
+let dragFrom=null;
+const ghost=document.getElementById('drag-ghost');
+
+// ── Render ─────────────────────────────────────────────────────
+function render() {
+  const el=document.getElementById('board');
+  el.innerHTML='';
+  const vmSet=new Set(vmoves.map(([,,nr,nc])=>`${nr},${nc}`));
+  const vcSet=new Set(vmoves.filter(([,,nr,nc])=>at(board,nr,nc)!==E).map(([,,nr,nc])=>`${nr},${nc}`));
+  for(let r=0;r<BS;r++) for(let c=0;c<BS;c++) {
+    const cell=document.createElement('div');
+    const key=`${r},${c}`;
+    const isSel=selected&&selected[0]===r&&selected[1]===c;
+    let cls=`cell ${(r+c)%2===0?'L':'D'}`;
+    if(isSel) cls+=' selected';
+    else if(lastMove) {
+      if(lastMove[0]===r&&lastMove[1]===c) cls+=' last-from';
+      if(lastMove[2]===r&&lastMove[3]===c) cls+=' last-to';
+    }
+    if(vcSet.has(key))      cls+=' vc clickable';
+    else if(vmSet.has(key)) cls+=' vm clickable';
+    cell.className=cls; cell.dataset.r=r; cell.dataset.c=c;
+    const p=at(board,r,c);
+    if(p!==E) {
+      const img=document.createElement('img');
+      img.src=IMGS[p];
+      img.className='piece'+(isSel&&dragFrom?' dragging':'')+((isSel&&!dragFrom)?' selected-piece':'');
+      img.style.cssText='width:80%;height:80%;image-rendering:pixelated;cursor:grab;';
+      img.draggable=false;
+      cell.appendChild(img);
+    }
+    cell.addEventListener('click', ()=>handleClick(r,c));
+    cell.addEventListener('mousedown', e=>onMouseDown(r,c,e));
+    cell.addEventListener('touchstart', e=>onTouchStart(r,c,e),{passive:false});
+    el.appendChild(cell);
+  }
+  updateUI();
+}
+
+function updateUI() {
+  const s=document.getElementById('stxt'), m=document.getElementById('mnm');
+  if(gameOver){s.textContent='';s.className='';m.textContent='';return;}
+  m.textContent=`Move ${moveNumber+1}`;
+  if(toMove===W) {
+    s.textContent='Your turn'; s.className='on';
+    document.getElementById('white-name').className='pname on';
+    document.getElementById('black-name').className='pname';
+    document.getElementById('white-tag').className='ptag on';
+  } else {
+    s.textContent='CPU thinking…'; s.className='pulse';
+    document.getElementById('black-name').className='pname on';
+    document.getElementById('white-name').className='pname';
+    document.getElementById('white-tag').className='ptag';
+  }
+}
+
+// ── Click ──────────────────────────────────────────────────────
+function handleClick(r,c) {
+  if(gameOver||toMove!==W) return;
+  if(selected) {
+    const m=vmoves.find(([,,nr,nc])=>nr===r&&nc===c);
+    if(m){executeUserMove(m);return;}
+  }
+  if(at(board,r,c)===W) {
+    selected=[r,c];
+    vmoves=legalMoves(board,W).filter(([fr,fc])=>fr===r&&fc===c);
+    render(); return;
+  }
+  selected=null; vmoves=[]; render();
+}
+
+// ── Drag & Drop ────────────────────────────────────────────────
+function startDragAt(r,c,clientX,clientY) {
+  if(gameOver||toMove!==W||at(board,r,c)!==W) return;
+  dragFrom=[r,c]; selected=[r,c];
+  vmoves=legalMoves(board,W).filter(([fr,fc])=>fr===r&&fc===c);
+  ghost.src=IMGS[W]; ghost.style.display='block';
+  const sz=Math.min(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sz'))||64,84);
+  ghost.style.width=ghost.style.height=sz+'px';
+  moveGhost(clientX,clientY); render();
+}
+const moveGhost=(x,y)=>{ ghost.style.left=x+'px'; ghost.style.top=y+'px'; };
+function endDragAt(clientX,clientY) {
+  if(!dragFrom) return;
+  ghost.style.display='none';
+  const el=document.elementFromPoint(clientX,clientY);
+  const cell=el?.closest('[data-r]');
+  if(cell) {
+    const r=+cell.dataset.r, c=+cell.dataset.c;
+    const m=vmoves.find(([,,nr,nc])=>nr===r&&nc===c);
+    if(m){dragFrom=null;executeUserMove(m);return;}
+  }
+  dragFrom=null; selected=null; vmoves=[]; render();
+}
+const onMouseDown=(r,c,e)=>{if(e.button!==0)return;e.preventDefault();startDragAt(r,c,e.clientX,e.clientY);};
+const onTouchStart=(r,c,e)=>{e.preventDefault();const t=e.touches[0];startDragAt(r,c,t.clientX,t.clientY);};
+document.addEventListener('mousemove',e=>{if(dragFrom)moveGhost(e.clientX,e.clientY);});
+document.addEventListener('mouseup',  e=>{if(dragFrom)endDragAt(e.clientX,e.clientY);});
+document.addEventListener('touchmove',e=>{if(dragFrom){e.preventDefault();const t=e.touches[0];moveGhost(t.clientX,t.clientY);}},{passive:false});
+document.addEventListener('touchend', e=>{if(dragFrom){const t=e.changedTouches[0];endDragAt(t.clientX,t.clientY);}});
+
+// ── Move execution ─────────────────────────────────────────────
+function executeUserMove(m) {
+  trackAcc(board,m);
+  board=applyMove(board,m); lastMove=m; selected=null; vmoves=[]; moveNumber++;
+  if(recPos(board,B)>=3){endGame('draw');return;}
+  const t=terminal(board,B);
+  if(t){endGame(t===W?'win':'lose');return;}
+  toMove=B; render();
+  setTimeout(executeCpuMove, 420);
+}
+function executeCpuMove() {
+  const m=cpuPick(board); if(!m){endGame('win');return;}
+  board=applyMove(board,m); lastMove=m; moveNumber++;
+  if(recPos(board,W)>=3){endGame('draw');return;}
+  const t=terminal(board,W);
+  if(t){endGame(t===W?'win':'lose');return;}
+  toMove=W; render();
+}
+
+// ── Game end ───────────────────────────────────────────────────
+async function endGame(outcome) {
+  gameOver=true; render();
+  const titles={win:'🏆 You won!',lose:'💀 You lost',draw:'🤝 Draw'};
+  const cls={win:'res-title win',lose:'res-title lose',draw:'res-title draw'};
+  document.getElementById('res-title').textContent=titles[outcome];
+  document.getElementById('res-title').className=cls[outcome];
+  const acc=accTotal>0?Math.round(accHits/accTotal*100):0;
+  document.getElementById('stat-acc').textContent=acc+'%';
+  document.getElementById('stat-mov').textContent=moveNumber;
+  document.getElementById('result').classList.add('show');
+
+  // ログイン済み → 保存 + バッジURL表示
+  if(currentUser) {
+    await saveResult(outcome, acc, moveNumber);
+    const username  = currentUser.user_metadata?.user_name;
+    const fnUrl     = `${SUPABASE_URL}/functions/v1/badge?user=${username}`;
+    const badgeUrl  = `https://img.shields.io/endpoint?url=${encodeURIComponent(fnUrl)}&style=for-the-badge`;
+    const siteUrl   = window.location.origin + window.location.pathname;
+    const markdown  = `[![Chicken Chess](${badgeUrl})](${siteUrl})`;
+    document.getElementById('badge-code').textContent = markdown;
+    document.getElementById('badge-section').style.display = 'block';
+  } else {
+    document.getElementById('login-prompt').style.display = 'block';
+  }
+
+  // localStorage にも保存（ログアウト時の参照用）
+  if(!localStorage.getItem(`cc_${SEED}`))
+    localStorage.setItem(`cc_${SEED}`, JSON.stringify({outcome,acc,moves:moveNumber}));
+}
+
+// ── Copy badge ─────────────────────────────────────────────────
+function copyBadge() {
+  const text = document.getElementById('badge-code').textContent;
+  navigator.clipboard?.writeText(text).then(() => {
+    const el = document.getElementById('badge-code');
+    el.style.borderColor = 'var(--acc)';
+    setTimeout(() => el.style.borderColor = '', 1500);
+  });
+}
+
+// ── Share ──────────────────────────────────────────────────────
+function doShare() {
+  const acc=document.getElementById('stat-acc').textContent;
+  const mov=document.getElementById('stat-mov').textContent;
+  const ttl=document.getElementById('res-title').textContent;
+  const ds=TODAY.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const bar=Array.from({length:10},(_,i)=>i<Math.round(parseInt(acc)/10)?'🟦':'⬜').join('');
+  const text=`🐔 Chicken Chess · ${ds}\n${ttl}\nAccuracy ${acc}  ${bar}\n${mov} moves\n\n${window.location.href}`;
+  const btn=document.querySelector('.share-btn');
+  if(navigator.share) navigator.share({text}).catch(()=>{});
+  else navigator.clipboard?.writeText(text).then(()=>{
+    btn.textContent='Copied! ✓'; setTimeout(()=>btn.textContent='Share result',2200);
+  });
+}
+
+// ── Init ───────────────────────────────────────────────────────
+document.getElementById('dlbl') && (document.getElementById('dlbl').textContent =
+  TODAY.toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+
+// headerにdlblがなかったので追加
+const logoEl = document.querySelector('.logo');
+if(logoEl) {
+  const dlbl = document.createElement('span');
+  dlbl.id = 'dlbl';
+  dlbl.style.cssText = 'font-size:11px;color:var(--mute);';
+  dlbl.textContent = TODAY.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+recPos(board,W);
+initAuth();
+render();
+</script>
+</body>
+</html>
